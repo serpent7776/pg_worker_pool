@@ -1,3 +1,5 @@
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include "postgres.h"
 #include "fmgr.h"
 #include "miscadmin.h"
@@ -11,6 +13,7 @@
 #include "postmaster/bgworker.h"
 #include "utils/snapmgr.h"
 #include "utils/memutils.h"
+#pragma GCC diagnostic pop
 
 PG_MODULE_MAGIC;
 
