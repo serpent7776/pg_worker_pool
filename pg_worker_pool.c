@@ -30,6 +30,11 @@ typedef struct WorkerPool
 	WorkerInfo worker[];
 } WorkerPool;
 
+typedef struct WorkerParams
+{
+	Oid database;
+} WorkerParams;
+
 #define MAX_WORKERS 64
 static WorkerPool* worker_pool = NULL;
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
@@ -63,6 +68,10 @@ Datum pg_worker_pool_submit(PG_FUNCTION_ARGS)
 
 	SPI_finish();
 
+	WorkerParams params = {
+		.database = MyDatabaseId,
+	};
+
 	BackgroundWorkerHandle* handle;
 	BackgroundWorker worker = {
 		.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION,
@@ -70,6 +79,7 @@ Datum pg_worker_pool_submit(PG_FUNCTION_ARGS)
 		.bgw_restart_time = BGW_NEVER_RESTART,
 		.bgw_notify_pid = MyProcPid,
 	};
+	memcpy(worker.bgw_extra, &params, sizeof(WorkerParams));
 
 	volatile bool found = false;
 	LWLockAcquire(worker_pool->lock, LW_EXCLUSIVE);
@@ -132,13 +142,15 @@ Datum pg_worker_pool_submit(PG_FUNCTION_ARGS)
 void pg_worker_main(Datum main_arg)
 {
 	int worker_index = DatumGetInt32(main_arg);
+	WorkerParams params;
+	memcpy(&params, MyBgworkerEntry->bgw_extra, sizeof(WorkerParams));
 
 	if (worker_index < 0 || worker_index >= worker_pool_size)
 		ereport(ERROR, (errmsg("Invalid worker index")));
 
 	WorkerInfo *worker = &worker_pool->worker[worker_index];
 
-	BackgroundWorkerInitializeConnection("test", NULL, 0);
+	BackgroundWorkerInitializeConnectionByOid(params.database, InvalidOid, 0);
 
 	BackgroundWorkerUnblockSignals();
 
