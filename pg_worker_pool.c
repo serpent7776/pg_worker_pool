@@ -33,7 +33,9 @@ typedef struct WorkerPool
 typedef struct WorkerParams
 {
 	Oid database;
+	Oid user;
 } WorkerParams;
+_Static_assert (sizeof(WorkerParams) < BGW_EXTRALEN, "WorkerParams too big");
 
 #define MAX_WORKERS 64
 static WorkerPool* worker_pool = NULL;
@@ -70,6 +72,7 @@ Datum pg_worker_pool_submit(PG_FUNCTION_ARGS)
 
 	WorkerParams params = {
 		.database = MyDatabaseId,
+		.user = GetUserId(),
 	};
 
 	BackgroundWorkerHandle* handle;
@@ -150,7 +153,7 @@ void pg_worker_main(Datum main_arg)
 
 	WorkerInfo *worker = &worker_pool->worker[worker_index];
 
-	BackgroundWorkerInitializeConnectionByOid(params.database, InvalidOid, 0);
+	BackgroundWorkerInitializeConnectionByOid(params.database, params.user, 0);
 
 	BackgroundWorkerUnblockSignals();
 
