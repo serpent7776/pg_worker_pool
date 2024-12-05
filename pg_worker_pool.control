@@ -1,0 +1,4 @@
+comment = 'A background worker pool for executing SQL queries'
+default_version = '0.1'
+module_pathname = '$libdir/pg_worker_pool'
+relocatable = true
