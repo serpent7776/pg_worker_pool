@@ -65,7 +65,7 @@ Datum pg_worker_pool_submit(PG_FUNCTION_ARGS)
 
 	StringInfoData buf;
 	initStringInfo(&buf);
-	appendStringInfo(&buf, "INSERT INTO pg_worker_pool_jobs(worker_name, query_text, status) VALUES ('%s', '%s', 'pending')",
+	appendStringInfo(&buf, "INSERT INTO pg_worker_pool_jobs(worker_name, query_text, status) VALUES ('%s', '%s', 'waiting')",
 		worker_name, query);
 
 	if (SPI_execute(buf.data, false, 0) != SPI_OK_INSERT)
@@ -201,11 +201,21 @@ void pg_worker_main(Datum main_arg)
 
 		StringInfoData buf;
 		initStringInfo(&buf);
-		appendStringInfo(&buf, "SELECT id, query_text FROM pg_worker_pool_jobs WHERE worker_name = '%s' AND status = 'pending' LIMIT 1",
+		appendStringInfo(&buf,
+			"WITH x AS (\n"
+			"  SELECT id, worker_name, query_text FROM pg_worker_pool_jobs\n"
+			"  WHERE worker_name = '%s' AND status = 'waiting'\n"
+			"  FOR UPDATE\n"
+			"  LIMIT 1\n"
+			")\n"
+			"UPDATE pg_worker_pool_jobs AS j SET status = 'pending'\n"
+			"FROM x\n"
+			"WHERE j.id = x.id\n"
+			"RETURNING j.id, j.query_text",
 			worker_name);
 
 		bool isnull;
-		if (SPI_execute(buf.data, true, 0) == SPI_OK_SELECT && SPI_processed > 0)
+		if (SPI_execute(buf.data, false, 0) == SPI_OK_UPDATE_RETURNING && SPI_processed == 1)
 		{
 			Datum id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1, &isnull);
 			const char *query = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 2);
