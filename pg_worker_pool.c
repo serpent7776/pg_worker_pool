@@ -37,6 +37,11 @@ typedef struct WorkerParams
 } WorkerParams;
 _Static_assert (sizeof(WorkerParams) < BGW_EXTRALEN, "WorkerParams too big");
 
+typedef struct XactArgs
+{
+	char worker_name[NAMEDATALEN];
+} XactArgs;
+
 #define MAX_WORKERS 64
 static WorkerPool* worker_pool = NULL;
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
@@ -45,6 +50,7 @@ static int worker_pool_size = MAX_WORKERS;
 
 PGDLLEXPORT void _PG_init(void);
 PGDLLEXPORT void pg_worker_main(Datum main_arg);
+PGDLLEXPORT void pg_worker_pool_on_xact(XactEvent event, void *arg);
 
 PG_FUNCTION_INFO_V1(pg_worker_pool_submit);
 Datum pg_worker_pool_submit(PG_FUNCTION_ARGS)
@@ -69,6 +75,23 @@ Datum pg_worker_pool_submit(PG_FUNCTION_ARGS)
 	}
 
 	SPI_finish();
+
+	XactArgs* xact_args = MemoryContextAlloc(TopTransactionContext, sizeof(XactArgs));
+	strncpy(xact_args->worker_name, worker_name, NAMEDATALEN);
+	RegisterXactCallback(pg_worker_pool_on_xact, xact_args);
+
+	PG_RETURN_VOID();
+}
+
+void pg_worker_pool_on_xact(XactEvent event, void *arg)
+{
+	if (event == XACT_EVENT_PRE_COMMIT || event == XACT_EVENT_PARALLEL_PRE_COMMIT) return;
+	if (event == XACT_EVENT_PREPARE || event == XACT_EVENT_PRE_PREPARE) return;
+	UnregisterXactCallback(pg_worker_pool_on_xact, arg);
+	if (event == XACT_EVENT_ABORT || event == XACT_EVENT_PARALLEL_ABORT) return;
+
+	XactArgs* xact_args = (XactArgs*)arg;
+	const char* worker_name = xact_args->worker_name;
 
 	WorkerParams params = {
 		.database = MyDatabaseId,
@@ -100,34 +123,37 @@ Datum pg_worker_pool_submit(PG_FUNCTION_ARGS)
 					snprintf(worker.bgw_library_name, BGW_MAXLEN, "pg_worker_pool");
 					snprintf(worker.bgw_function_name, BGW_MAXLEN, "pg_worker_main");
 
-					if (!RegisterDynamicBackgroundWorker(&worker, &handle))
-						ereport(ERROR, (errmsg("Failed to register background worker")));
-
-					worker_pool->worker[i].is_active = true;
+					if (RegisterDynamicBackgroundWorker(&worker, &handle))
+					{
+						worker_pool->worker[i].is_active = true;
+						found = true;
+					}
+					else ereport(WARNING, (errmsg("Failed to start background worker")));
 				}
-				found = true;
 				break;
 			}
 		}
-		for (int i = 0; i < worker_pool_size; i++)
-		{
-			if (!worker_pool->worker[i].is_active)
+		if (!found)
+			for (int i = 0; i < worker_pool_size; i++)
 			{
-				worker.bgw_main_arg = Int32GetDatum(i),
-				snprintf(worker_pool->worker[i].name, BGW_MAXLEN, "%s", worker_name);
+				if (!worker_pool->worker[i].is_active)
+				{
+					worker.bgw_main_arg = Int32GetDatum(i),
+					snprintf(worker_pool->worker[i].name, BGW_MAXLEN, "%s", worker_name);
 
-				snprintf(worker.bgw_name, BGW_MAXLEN, "pgworker: %s", worker_name);
-				snprintf(worker.bgw_library_name, BGW_MAXLEN, "pg_worker_pool");
-				snprintf(worker.bgw_function_name, BGW_MAXLEN, "pg_worker_main");
+					snprintf(worker.bgw_name, BGW_MAXLEN, "pgworker: %s", worker_name);
+					snprintf(worker.bgw_library_name, BGW_MAXLEN, "pg_worker_pool");
+					snprintf(worker.bgw_function_name, BGW_MAXLEN, "pg_worker_main");
 
-				if (!RegisterDynamicBackgroundWorker(&worker, &handle))
-					ereport(ERROR, (errmsg("Failed to register background worker")));
-
-				worker_pool->worker[i].is_active = true;
-				found = true;
-				break;
+					if (RegisterDynamicBackgroundWorker(&worker, &handle))
+					{
+						worker_pool->worker[i].is_active = true;
+						found = true;
+					}
+					else ereport(WARNING, (errmsg("Failed to register background worker")));
+					break;
+				}
 			}
-		}
 	}
 	PG_FINALLY();
 	{
@@ -136,10 +162,7 @@ Datum pg_worker_pool_submit(PG_FUNCTION_ARGS)
 	PG_END_TRY();
 
 	if (!found)
-		ereport(ERROR, (errmsg("Worker name '%s' not found", worker_name)));
-
-	WaitForBackgroundWorkerStartup(handle, &worker.bgw_notify_pid);
-	PG_RETURN_INT32(worker.bgw_notify_pid);
+		ereport(WARNING, (errmsg("Worker name '%s' not found", worker_name)));
 }
 
 void pg_worker_main(Datum main_arg)

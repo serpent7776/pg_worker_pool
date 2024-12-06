@@ -5,5 +5,5 @@ CREATE TABLE pg_worker_pool_jobs (
     status TEXT CHECK (status IN ('pending', 'done')) DEFAULT 'pending'
 );
 
-CREATE FUNCTION pg_worker_pool_submit(TEXT, TEXT) RETURNS INTEGER
-AS 'MODULE_PATHNAME', 'pg_worker_pool_submit' LANGUAGE c STRICT;
+CREATE PROCEDURE pg_worker_pool_submit(worker TEXT, query TEXT)
+AS 'MODULE_PATHNAME', 'pg_worker_pool_submit' LANGUAGE c;
