@@ -220,19 +220,42 @@ void pg_worker_main(Datum main_arg)
 			Datum id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1, &isnull);
 			const char *query = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 2);
 
-			int code = SPI_execute(query, false, 0);
-			if (code > 0)
+			volatile bool exn = false;
+			volatile MemoryContext mycontext = CurrentMemoryContext;
+			PG_TRY();
 			{
-				resetStringInfo(&buf);
-				appendStringInfo(&buf, "UPDATE pg_worker_pool_jobs SET status = 'done' WHERE id = %d",
-					DatumGetInt32(id));
+				int code = SPI_execute(query, false, 0);
+				if (code > 0)
+				{
+					resetStringInfo(&buf);
+					appendStringInfo(&buf, "UPDATE pg_worker_pool_jobs SET status = 'done' WHERE id = %d",
+						DatumGetInt32(id));
 
-				if (SPI_execute(buf.data, false, 0) != SPI_OK_UPDATE)
-					ereport(WARNING, (errmsg("Failed to update job status")));
+					if (SPI_execute(buf.data, false, 0) != SPI_OK_UPDATE)
+						ereport(WARNING, (errmsg("Failed to update job status")));
+				}
+				else
+				{
+					ereport(WARNING, (errmsg("Query failed with error code %d: %s", code, query)));
+				}
 			}
-			else
+			PG_CATCH();
 			{
-				ereport(WARNING, (errmsg("Query failed with error code %d: %s", code, query)));
+				exn = true;
+				MemoryContextSwitchTo(mycontext);
+				SPI_finish();
+				PopActiveSnapshot();
+				if (IsTransactionState())
+					AbortCurrentTransaction();
+				EmitErrorReport();
+				FlushErrorState();
+
+			}
+			PG_END_TRY();
+			if (exn)
+			{
+				pg_usleep(100000);
+				continue;
 			}
 		}
 		else
