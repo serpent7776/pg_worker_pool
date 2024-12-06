@@ -43,7 +43,7 @@ typedef struct XactArgs
 } XactArgs;
 
 #define MAX_WORKERS 64
-static WorkerPool* worker_pool = NULL;
+static WorkerPool* pool = NULL;
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static int worker_pool_size = MAX_WORKERS;
@@ -108,14 +108,14 @@ void pg_worker_pool_on_xact(XactEvent event, void *arg)
 	memcpy(worker.bgw_extra, &params, sizeof(WorkerParams));
 
 	volatile bool found = false;
-	LWLockAcquire(worker_pool->lock, LW_EXCLUSIVE);
+	LWLockAcquire(pool->lock, LW_EXCLUSIVE);
 	PG_TRY();
 	{
 		for (int i = 0; i < worker_pool_size; i++)
 		{
-			if (strcmp(worker_pool->worker[i].name, worker_name) == 0)
+			if (strcmp(pool->worker[i].name, worker_name) == 0)
 			{
-				if (!worker_pool->worker[i].is_active)
+				if (!pool->worker[i].is_active)
 				{
 					worker.bgw_main_arg = Int32GetDatum(i),
 
@@ -125,7 +125,7 @@ void pg_worker_pool_on_xact(XactEvent event, void *arg)
 
 					if (RegisterDynamicBackgroundWorker(&worker, &handle))
 					{
-						worker_pool->worker[i].is_active = true;
+						pool->worker[i].is_active = true;
 						found = true;
 					}
 					else ereport(WARNING, (errmsg("Failed to start background worker")));
@@ -136,10 +136,10 @@ void pg_worker_pool_on_xact(XactEvent event, void *arg)
 		if (!found)
 			for (int i = 0; i < worker_pool_size; i++)
 			{
-				if (!worker_pool->worker[i].is_active)
+				if (!pool->worker[i].is_active)
 				{
 					worker.bgw_main_arg = Int32GetDatum(i),
-					snprintf(worker_pool->worker[i].name, BGW_MAXLEN, "%s", worker_name);
+					snprintf(pool->worker[i].name, BGW_MAXLEN, "%s", worker_name);
 
 					snprintf(worker.bgw_name, BGW_MAXLEN, "pgworker: %s", worker_name);
 					snprintf(worker.bgw_library_name, BGW_MAXLEN, "pg_worker_pool");
@@ -147,7 +147,7 @@ void pg_worker_pool_on_xact(XactEvent event, void *arg)
 
 					if (RegisterDynamicBackgroundWorker(&worker, &handle))
 					{
-						worker_pool->worker[i].is_active = true;
+						pool->worker[i].is_active = true;
 						found = true;
 					}
 					else ereport(WARNING, (errmsg("Failed to register background worker")));
@@ -157,7 +157,7 @@ void pg_worker_pool_on_xact(XactEvent event, void *arg)
 	}
 	PG_FINALLY();
 	{
-		LWLockRelease(worker_pool->lock);
+		LWLockRelease(pool->lock);
 	}
 	PG_END_TRY();
 
@@ -181,10 +181,10 @@ void pg_worker_main(Datum main_arg)
 	MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_worker_pool");
 
-	LWLockAcquire(worker_pool->lock, LW_SHARED);
-	WorkerInfo* worker = &worker_pool->worker[worker_index];
+	LWLockAcquire(pool->lock, LW_SHARED);
+	WorkerInfo* worker = &pool->worker[worker_index];
 	const char* worker_name = MemoryContextStrdup(TopMemoryContext, worker->name);
-	LWLockRelease(worker_pool->lock);
+	LWLockRelease(pool->lock);
 
 	while (true)
 	{
@@ -227,9 +227,9 @@ void pg_worker_main(Datum main_arg)
 		}
 		else
 		{
-			LWLockAcquire(worker_pool->lock, LW_EXCLUSIVE);
+			LWLockAcquire(pool->lock, LW_EXCLUSIVE);
 			worker->is_active = false;
-			LWLockRelease(worker_pool->lock);
+			LWLockRelease(pool->lock);
 			SPI_finish();
 			PopActiveSnapshot();
 			CommitTransactionCommand();
@@ -263,14 +263,14 @@ static void worker_pool_shmem_startup(void)
 	bool found;
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
 	InitShmemIndex();
-	worker_pool = ShmemInitStruct("pg_worker_pool", sizeof(WorkerPool) + worker_pool_size * sizeof(WorkerInfo), &found);
+	pool = ShmemInitStruct("pg_worker_pool", sizeof(WorkerPool) + worker_pool_size * sizeof(WorkerInfo), &found);
 	if (!found) {
 		for (int i = 0; i < worker_pool_size; i++)
 		{
-			worker_pool->worker[i].is_active = false;
-			memset(worker_pool->worker[i].name, 0, NAMEDATALEN);
+			pool->worker[i].is_active = false;
+			memset(pool->worker[i].name, 0, NAMEDATALEN);
 		}
-		worker_pool->lock = &(GetNamedLWLockTranche("worker_pool"))->lock;
+		pool->lock = &(GetNamedLWLockTranche("worker_pool"))->lock;
 	}
 	LWLockRelease(AddinShmemInitLock);
 }
