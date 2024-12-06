@@ -167,14 +167,12 @@ void pg_worker_pool_on_xact(XactEvent event, void *arg)
 
 void pg_worker_main(Datum main_arg)
 {
-	int worker_index = DatumGetInt32(main_arg);
+	const int worker_index = DatumGetInt32(main_arg);
 	WorkerParams params;
 	memcpy(&params, MyBgworkerEntry->bgw_extra, sizeof(WorkerParams));
 
 	if (worker_index < 0 || worker_index >= worker_pool_size)
 		ereport(ERROR, (errmsg("Invalid worker index")));
-
-	WorkerInfo *worker = &worker_pool->worker[worker_index];
 
 	BackgroundWorkerInitializeConnectionByOid(params.database, params.user, 0);
 
@@ -182,6 +180,11 @@ void pg_worker_main(Datum main_arg)
 
 	MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_worker_pool");
+
+	LWLockAcquire(worker_pool->lock, LW_SHARED);
+	WorkerInfo* worker = &worker_pool->worker[worker_index];
+	const char* worker_name = MemoryContextStrdup(TopMemoryContext, worker->name);
+	LWLockRelease(worker_pool->lock);
 
 	while (true)
 	{
@@ -199,7 +202,7 @@ void pg_worker_main(Datum main_arg)
 		StringInfoData buf;
 		initStringInfo(&buf);
 		appendStringInfo(&buf, "SELECT id, query_text FROM pg_worker_pool_jobs WHERE worker_name = '%s' AND status = 'pending' LIMIT 1",
-			worker->name);
+			worker_name);
 
 		bool isnull;
 		if (SPI_execute(buf.data, true, 0) == SPI_OK_SELECT && SPI_processed > 0)
@@ -224,7 +227,9 @@ void pg_worker_main(Datum main_arg)
 		}
 		else
 		{
+			LWLockAcquire(worker_pool->lock, LW_EXCLUSIVE);
 			worker->is_active = false;
+			LWLockRelease(worker_pool->lock);
 			SPI_finish();
 			PopActiveSnapshot();
 			CommitTransactionCommand();
