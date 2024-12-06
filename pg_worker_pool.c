@@ -178,7 +178,6 @@ void pg_worker_main(Datum main_arg)
 
 	BackgroundWorkerUnblockSignals();
 
-	MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_worker_pool");
 
 	LWLockAcquire(pool->lock, LW_SHARED);
