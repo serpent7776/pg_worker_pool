@@ -243,19 +243,28 @@ void pg_worker_main(Datum main_arg)
 			{
 				exn = true;
 				MemoryContextSwitchTo(mycontext);
-				SPI_finish();
-				PopActiveSnapshot();
-				if (IsTransactionState())
-					AbortCurrentTransaction();
 				EmitErrorReport();
 				FlushErrorState();
-
 			}
 			PG_END_TRY();
 			if (exn)
 			{
-				pg_usleep(100000);
-				continue;
+				SPI_finish();
+				PopActiveSnapshot();
+				if (IsTransactionState())
+					AbortCurrentTransaction();
+
+				StartTransactionCommand();
+				if (SPI_connect() != SPI_OK_CONNECT)
+					ereport(ERROR, (errmsg("could not connect to SPI manager")));
+				PushActiveSnapshot(GetTransactionSnapshot());
+
+				resetStringInfo(&buf);
+				appendStringInfo(&buf, "UPDATE pg_worker_pool_jobs SET status = 'failed' WHERE id = %d",
+					DatumGetInt32(id));
+
+				if (SPI_execute(buf.data, false, 0) != SPI_OK_UPDATE)
+					ereport(WARNING, (errmsg("Failed to update job status")));
 			}
 		}
 		else
