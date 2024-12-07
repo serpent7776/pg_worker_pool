@@ -65,7 +65,7 @@ Datum pg_worker_pool_submit(PG_FUNCTION_ARGS)
 
 	StringInfoData buf;
 	initStringInfo(&buf);
-	appendStringInfo(&buf, "INSERT INTO pg_worker_pool_jobs(worker_name, query_text, status) VALUES ('%s', '%s', 'waiting')",
+	appendStringInfo(&buf, "INSERT INTO worker_pool.jobs(worker_name, query_text, status) VALUES ('%s', '%s', 'waiting')",
 		worker_name, query);
 
 	if (SPI_execute(buf.data, false, 0) != SPI_OK_INSERT)
@@ -202,12 +202,12 @@ void pg_worker_main(Datum main_arg)
 		initStringInfo(&buf);
 		appendStringInfo(&buf,
 			"WITH x AS (\n"
-			"  SELECT id, worker_name, query_text FROM pg_worker_pool_jobs\n"
+			"  SELECT id, worker_name, query_text FROM worker_pool.jobs\n"
 			"  WHERE worker_name = '%s' AND status = 'waiting'\n"
 			"  FOR UPDATE\n"
 			"  LIMIT 1\n"
 			")\n"
-			"UPDATE pg_worker_pool_jobs AS j SET status = 'pending'\n"
+			"UPDATE worker_pool.jobs AS j SET status = 'pending'\n"
 			"FROM x\n"
 			"WHERE j.id = x.id\n"
 			"RETURNING j.id, j.query_text",
@@ -227,7 +227,7 @@ void pg_worker_main(Datum main_arg)
 				if (code > 0)
 				{
 					resetStringInfo(&buf);
-					appendStringInfo(&buf, "UPDATE pg_worker_pool_jobs SET status = 'done' WHERE id = %d",
+					appendStringInfo(&buf, "UPDATE worker_pool.jobs SET status = 'done' WHERE id = %d",
 						DatumGetInt32(id));
 
 					if (SPI_execute(buf.data, false, 0) != SPI_OK_UPDATE)
@@ -259,7 +259,7 @@ void pg_worker_main(Datum main_arg)
 				PushActiveSnapshot(GetTransactionSnapshot());
 
 				resetStringInfo(&buf);
-				appendStringInfo(&buf, "UPDATE pg_worker_pool_jobs SET status = 'failed' WHERE id = %d",
+				appendStringInfo(&buf, "UPDATE worker_pool.jobs SET status = 'failed' WHERE id = %d",
 					DatumGetInt32(id));
 
 				if (SPI_execute(buf.data, false, 0) != SPI_OK_UPDATE)
