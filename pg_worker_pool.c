@@ -42,7 +42,8 @@ typedef struct XactArgs
 	char worker_name[NAMEDATALEN];
 } XactArgs;
 
-#define MAX_WORKERS 64
+#define MAX_WORKERS 8
+
 static WorkerPool* pool = NULL;
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
