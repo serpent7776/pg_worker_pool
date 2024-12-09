@@ -83,6 +83,21 @@ Datum pg_worker_pool_submit(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
+PG_FUNCTION_INFO_V1(pg_worker_pool_launch);
+Datum pg_worker_pool_launch(PG_FUNCTION_ARGS)
+{
+	const char *worker_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+
+	if (strlen(worker_name) >= NAMEDATALEN)
+		ereport(ERROR, (errmsg("Worker name too long")));
+
+	XactArgs* xact_args = MemoryContextAlloc(TopTransactionContext, sizeof(XactArgs));
+	strncpy(xact_args->worker_name, worker_name, NAMEDATALEN);
+	RegisterXactCallback(pg_worker_pool_on_xact, xact_args);
+
+	PG_RETURN_VOID();
+}
+
 void pg_worker_pool_on_xact(XactEvent event, void *arg)
 {
 	if (event == XACT_EVENT_PRE_COMMIT || event == XACT_EVENT_PARALLEL_PRE_COMMIT) return;

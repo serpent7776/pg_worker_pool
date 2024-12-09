@@ -9,3 +9,6 @@ CREATE TABLE worker_pool.jobs (
 
 CREATE PROCEDURE worker_pool.submit(worker TEXT, query TEXT)
 AS 'MODULE_PATHNAME', 'pg_worker_pool_submit' LANGUAGE c;
+
+CREATE PROCEDURE worker_pool.launch(worker TEXT)
+AS 'MODULE_PATHNAME', 'pg_worker_pool_launch' LANGUAGE c;
