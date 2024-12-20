@@ -7,8 +7,12 @@ This uses [Postgresql background workers](https://www.postgresql.org/docs/curren
 Keep in mind that Postgresql has limited number of available background workers. This is specified by `max_worker_processes` configuration. Changing that limit requires server restart.
 
 Currently this extension has hard-coded number of workers which is set to `8`.
+If you want to change it, you can set `MAX_WORKERS` variable in `pg_worker_pool.c` to any other number and recompile the extension.
+Increasing this number will let you start more workers.
+Making this larger than `max_worker_processes` will yield no effect though. This is a Postgresql limitation.
+You could also decrease that number, but I'm not sure why would one do that. You can control how many workers actually start by choosing appropriate worker name.
 
-Background workers are created on-demand and are exited as soon as they aren't needed.
+Background workers are created on-demand and exit as soon as they aren't needed.
 
 ## Usage
 
