@@ -56,3 +56,9 @@ CALL worker_pool.submit('bar', 'create index otherindex_2 on other_big_table (ti
 This will start two background workers, `foo` and `bar`.
 `foo` will create an indices on table `my_big_table` and `bar` on table `other_big_table`.
 `foo` and `bar` will run independently of each other, but all indices submitted to the same worker will be created in order.
+
+## FAQ
+
+### How many workers should I start?
+
+It's hard to answer that in general case, but you probably don't want to start more than the number of CPUs you have on the machine, especially for long running queries.
