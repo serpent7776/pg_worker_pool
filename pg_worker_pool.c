@@ -142,10 +142,10 @@ void pg_worker_pool_on_xact(XactEvent event, void *arg)
 					if (RegisterDynamicBackgroundWorker(&worker, &handle))
 					{
 						pool->worker[i].is_active = true;
-						found = true;
 					}
 					else ereport(WARNING, (errmsg("Failed to start background worker")));
 				}
+				found = true;
 				break;
 			}
 		}
