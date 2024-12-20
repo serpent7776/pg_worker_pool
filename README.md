@@ -19,6 +19,7 @@ Background workers are created on-demand and exit as soon as they aren't needed.
 Upon creation, this extension creates `worker_pool` schema.
 
 `worker_pool.submit` can be used to add query to be executed on a specified background worker. This also starts the worker at the end of current transaction (if committed). If the current transaction is aborted, the worker is not started.
+If you start more than one worker in the same transaction, the order in which they are started in unspecified. It might be and likely will be different than the order of submission. Do not rely on this ordering.
 
 `worker_pool.launch` can be used to start a specified worker without adding any queries to the queue.
 
