@@ -51,6 +51,15 @@ CALL worker_pool.submit('foo', 'create index myindex_1 on my_big_table (id)');
 CALL worker_pool.submit('foo', 'create index myindex_2 on my_big_table (name)');
 CALL worker_pool.submit('bar', 'create index otherindex_1 on other_big_table (author)');
 CALL worker_pool.submit('bar', 'create index otherindex_2 on other_big_table (title)');
+
+SELECT * FROM worker_pool.jobs ORDER BY id DESC;
+ id | worker_name |                      query_text                       | status
+----+-------------+-------------------------------------------------------+--------
+  4 | bar         | create index otherindex_2 on other_big_table (title)  | done
+  3 | bar         | create index otherindex_1 on other_big_table (author) | done
+  2 | foo         | create index myindex_2 on my_big_table (name)         | done
+  1 | foo         | create index myindex_1 on my_big_table (id)           | done
+(4 rows)
 ```
 
 This will start two background workers, `foo` and `bar`.
