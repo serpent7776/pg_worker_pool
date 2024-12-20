@@ -24,6 +24,20 @@ Worker name can be any string with max length of `NAMEDATALEN` (by default 64 ch
 
 This extension must be loaded via `shared_preload_libraries` to correctly allocate required shared memory.
 
+## How to install
+
+Regular `git clone` + `make` + `make install` should be enough.
+
+Note that `pg_config` utility needs to be in your `$PATH`.
+It is commonly part of `postgresql-common` package on Debian/Ubuntu and `postgresql-libs` on Arch systems.
+
+```
+git clone https://github.com/serpent7776/pg_worker_pool.git
+cd pg_worker_pool
+make
+sudo make install
+```
+
 ## Example
 
 ```sql
