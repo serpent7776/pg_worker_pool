@@ -204,6 +204,9 @@ void pg_worker_main(Datum main_arg)
 	pgstat_report_appname("pg_worker_pool");
 	pgstat_report_activity(STATE_IDLE, NULL);
 
+	StringInfoData buf;
+	initStringInfo(&buf);
+
 	while (true)
 	{
 		StartTransactionCommand();
@@ -216,8 +219,7 @@ void pg_worker_main(Datum main_arg)
 		}
 		PushActiveSnapshot(GetTransactionSnapshot());
 
-		StringInfoData buf;
-		initStringInfo(&buf);
+		resetStringInfo(&buf);
 		appendStringInfo(&buf,
 			"WITH x AS (\n"
 			"  SELECT id, worker_name, query_text FROM worker_pool.jobs\n"
