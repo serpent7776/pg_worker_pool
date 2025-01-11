@@ -3,16 +3,15 @@
 #include "postgres.h"
 #include "fmgr.h"
 #include "miscadmin.h"
-#include "storage/latch.h"
 #include "storage/ipc.h"
 #include "storage/shmem.h"
 #include "storage/lwlock.h"
-#include "utils/guc.h"
 #include "utils/builtins.h"
 #include "executor/spi.h"
 #include "postmaster/bgworker.h"
 #include "utils/snapmgr.h"
 #include "utils/memutils.h"
+#include "utils/backend_status.h"
 #pragma GCC diagnostic pop
 
 PG_MODULE_MAGIC;
@@ -201,6 +200,10 @@ void pg_worker_main(Datum main_arg)
 	const char* worker_name = MemoryContextStrdup(TopMemoryContext, worker->name);
 	LWLockRelease(pool->lock);
 
+	MyBackendType = B_BACKEND;
+	pgstat_report_appname("pg_worker_pool");
+	pgstat_report_activity(STATE_IDLE, NULL);
+
 	while (true)
 	{
 		SetCurrentStatementStartTimestamp();
@@ -228,12 +231,14 @@ void pg_worker_main(Datum main_arg)
 			"WHERE j.id = x.id\n"
 			"RETURNING j.id, j.query_text",
 			worker_name);
+		pgstat_report_activity(STATE_RUNNING, buf.data);
 
 		bool isnull;
 		if (SPI_execute(buf.data, false, 0) == SPI_OK_UPDATE_RETURNING && SPI_processed == 1)
 		{
 			Datum id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1, &isnull);
 			const char *query = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 2);
+			pgstat_report_activity(STATE_RUNNING, query);
 
 			volatile bool exn = false;
 			volatile MemoryContext mycontext = CurrentMemoryContext;
@@ -245,6 +250,7 @@ void pg_worker_main(Datum main_arg)
 					resetStringInfo(&buf);
 					appendStringInfo(&buf, "UPDATE worker_pool.jobs SET status = 'done' WHERE id = %d",
 						DatumGetInt32(id));
+					pgstat_report_activity(STATE_RUNNING, buf.data);
 
 					if (SPI_execute(buf.data, false, 0) != SPI_OK_UPDATE)
 						ereport(WARNING, (errmsg("Failed to update job status")));
@@ -277,6 +283,7 @@ void pg_worker_main(Datum main_arg)
 				resetStringInfo(&buf);
 				appendStringInfo(&buf, "UPDATE worker_pool.jobs SET status = 'failed' WHERE id = %d",
 					DatumGetInt32(id));
+				pgstat_report_activity(STATE_RUNNING, buf.data);
 
 				if (SPI_execute(buf.data, false, 0) != SPI_OK_UPDATE)
 					ereport(WARNING, (errmsg("Failed to update job status")));
@@ -296,6 +303,7 @@ void pg_worker_main(Datum main_arg)
 		SPI_finish();
 		PopActiveSnapshot();
 		CommitTransactionCommand();
+		pgstat_report_activity(STATE_IDLE, NULL);
 		pg_usleep(100000);
 	}
 
