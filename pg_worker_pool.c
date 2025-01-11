@@ -206,7 +206,6 @@ void pg_worker_main(Datum main_arg)
 
 	while (true)
 	{
-		SetCurrentStatementStartTimestamp();
 		StartTransactionCommand();
 		if (SPI_connect() != SPI_OK_CONNECT)
 		{
@@ -231,6 +230,7 @@ void pg_worker_main(Datum main_arg)
 			"WHERE j.id = x.id\n"
 			"RETURNING j.id, j.query_text",
 			worker_name);
+		SetCurrentStatementStartTimestamp();
 		pgstat_report_activity(STATE_RUNNING, buf.data);
 
 		bool isnull;
@@ -238,6 +238,7 @@ void pg_worker_main(Datum main_arg)
 		{
 			Datum id = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1, &isnull);
 			const char *query = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 2);
+			SetCurrentStatementStartTimestamp();
 			pgstat_report_activity(STATE_RUNNING, query);
 
 			volatile bool exn = false;
@@ -250,6 +251,7 @@ void pg_worker_main(Datum main_arg)
 					resetStringInfo(&buf);
 					appendStringInfo(&buf, "UPDATE worker_pool.jobs SET status = 'done' WHERE id = %d",
 						DatumGetInt32(id));
+					SetCurrentStatementStartTimestamp();
 					pgstat_report_activity(STATE_RUNNING, buf.data);
 
 					if (SPI_execute(buf.data, false, 0) != SPI_OK_UPDATE)
@@ -283,6 +285,7 @@ void pg_worker_main(Datum main_arg)
 				resetStringInfo(&buf);
 				appendStringInfo(&buf, "UPDATE worker_pool.jobs SET status = 'failed' WHERE id = %d",
 					DatumGetInt32(id));
+				SetCurrentStatementStartTimestamp();
 				pgstat_report_activity(STATE_RUNNING, buf.data);
 
 				if (SPI_execute(buf.data, false, 0) != SPI_OK_UPDATE)
